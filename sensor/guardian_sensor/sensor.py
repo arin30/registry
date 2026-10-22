@@ -72,6 +72,11 @@ class Sensor:
     def evidence(self, pattern_ids, action, detail):
         rec = {"time": now(), "patterns": pattern_ids, "reasons": [rules.RULES[p] for p in pattern_ids],
                "action": action, "detail": detail, "sensor": "guardian-sensor v0 (prototype)"}
+        # Marked here, at the moment of detection, because this is the only place that knows
+        # for certain. Anything deciding later would be guessing, and a drill mistaken for an
+        # incident is the one error this whole project cannot afford to publish.
+        if self.cfg.get("drill"):
+            rec["drill"] = True
         os.makedirs(os.path.dirname(self.cfg["evidence_path"]) or ".", exist_ok=True)
         with open(self.cfg["evidence_path"], "a") as f:
             f.write(json.dumps(rec) + "\n")
@@ -180,6 +185,7 @@ def pump(src, dst, handler, sensor, reply_to=None):
 # The sharing hub commands. Anything else is the proxy, so the way the sensor has always
 # been started keeps working unchanged.
 HUB_COMMANDS = ("report", "update")
+DRILL_COMMAND = "drill"
 
 
 def main(argv=None):
@@ -187,6 +193,9 @@ def main(argv=None):
     if args[:1] and args[0] in HUB_COMMANDS:
         from . import hub_cli
         return hub_cli.main(args)
+    if args[:1] == [DRILL_COMMAND]:
+        from . import drill
+        return drill.main(args[1:])
 
     ap = argparse.ArgumentParser(prog="guardian_sensor")
     ap.add_argument("--config", default=None)
