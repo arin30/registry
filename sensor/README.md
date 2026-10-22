@@ -32,6 +32,69 @@ claude mcp add files-guarded -- python3 /path/to/sensor/run.py --config /path/to
 
 Copy `guardian.example.json` to `guardian.json` and list the domains your agents may send data to. Set `"mode": "monitor"` to log without blocking.
 
+## Watch for your own secrets
+
+Every other detection here is a pattern somebody wrote down in advance, which is what an
+adaptive attacker reads and routes around. A canary is different in kind. It does not
+describe an attack. It fires because a specific value moved, whatever moved it.
+
+The sensor already watches for its own test tokens. These are yours.
+
+```bash
+python3 -m guardian_sensor canary add --label "staging payment key"
+```
+
+The value is read from a prompt, or piped in, and never passed as an argument, because an
+argument lands in shell history and in the process table. Only a salted digest is stored, so
+the file listing what the sensor watches for is not itself a secret store.
+
+```bash
+python3 -m guardian_sensor canary list
+python3 -m guardian_sensor canary arm --label "staging payment key"
+python3 -m guardian_sensor canary remove --label "staging payment key"
+```
+
+**A canary starts in baseline and reports without blocking, whatever the mode.** Backups,
+indexers and data loss scanners legitimately touch things nobody should touch, and the first
+thing an operator learns from a badly placed canary should not be that their agent stopped
+working. Watch it through a few days of ordinary work. If it never fires, arm it. If it does
+fire, move the canary rather than raising the threshold.
+
+What a hit reports is the label and the state. Never the value, not in the evidence, not in
+a log line, not in an error.
+
+Where to place one: a credential nothing legitimate uses, a file nothing should read, a row
+no query should return.
+
+### What this does not cover
+
+Worth being exact, because the obvious overclaim is easy to make.
+
+**This fires when an agent passes a registered value into a tool call.** It is checked on
+outbound arguments, before the call is forwarded, because after that the value has gone.
+
+So it does not detect a platform being breached. In the Railway disclosure of October 2026
+an intruder read customer environment variables directly, with no agent involved anywhere,
+and nothing here would have fired. What it would catch is the next step: an agent that has
+been handed one of those credentials passing it onward.
+
+A refusal does not say which rule fired. That is deliberate and it costs something: a
+developer whose legitimate work is blocked has to read the evidence log to learn why, rather
+than being told in the response. The reason is that an attacker holding a set of stolen
+credentials can send them one at a time and read the answers, and if a canary match looks
+different from any other refusal they learn which key is the fake one and take the rest. So
+every refusal is identical, and the full reason is recorded locally where only the operator
+sees it.
+
+It is also not checked on tool output. A canary coming back from a file read means the agent
+now holds the value, which is a different event from the agent sending it, and recording
+both under one pattern would make the evidence ambiguous about which happened.
+
+Matching is on whole tokens, so a value spliced into a longer run of characters or re-encoded
+on the way out is not found: this catches a credential being passed on, not one being
+smuggled. Matching is case sensitive, as credentials are. Values shorter than twelve
+characters, and values containing spaces, are refused rather than silently never matched.
+
 ## Fire drill
 
 The fastest way to see the sensor work, and the way to join the exchange without waiting to
