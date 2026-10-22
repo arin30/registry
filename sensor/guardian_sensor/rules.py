@@ -17,7 +17,14 @@ import re
 # checks over them. Changing what the sensor looks for means changing that file, which the
 # rule lint (scripts/lint_rules.py) and the rule gate (scripts/rule_gate.py) check.
 
-SIGNATURES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signatures.json")
+# A sensor runs as its own process for one session, so the rule set is chosen once at
+# startup and never changes underneath a running session. GUARDIAN_SIGNATURES points at a
+# verified bundle on disk, which is how an operator runs rules newer than their install
+# without replacing it, and how the response drill measures the before and after of
+# adopting one. It is a path to data, not a way to author rules: nothing in the file can
+# execute, and the checks that read it are still the fixed ones in this module.
+SIGNATURES_PATH = (os.environ.get("GUARDIAN_SIGNATURES")
+                   or os.path.join(os.path.dirname(os.path.abspath(__file__)), "signatures.json"))
 
 _FLAGS = {"i": re.I, "s": re.S}
 
@@ -40,6 +47,22 @@ def load_signatures(path: str = SIGNATURES_PATH) -> dict:
 
 SIGNATURES = load_signatures()
 _S = SIGNATURES
+
+
+def signatures_fingerprint(path: str = None) -> str:
+    """A short digest of the rule bundle actually in use.
+
+    Recorded on every detection so a sighting cannot claim a rule set it was not running.
+    Without it, a sensor pointed at a stripped bundle produces evidence indistinguishable
+    from a fully armed one, and `rules_version` is whatever the member types at report time.
+    The specification requires that an entry's rule set be knowable; this is what makes that
+    true rather than asserted.
+    """
+    try:
+        with open(path or SIGNATURES_PATH, "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()[:12]
+    except OSError:
+        return "unreadable"
 
 # ---------- Content checks ----------
 
